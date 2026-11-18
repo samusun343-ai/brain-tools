@@ -1,0 +1,68 @@
+From ef080a3c66ede3220736d29a461ca84a67e97fa9 Mon Sep 17 00:00:00 2001
+From: samusun343-ai <samusun343-ai@users.noreply.github.com>
+Date: Wed, 18 Nov 2026 02:28:00 +0000
+Subject: [PATCH 3/3] rtc: stmp3xxx: honour the wakeup-source DT property
+
+The driver already arms the hardware alarm-wake bits
+(PERSISTENT0 ALARM_EN/ALARM_WAKE_EN) but never registered the
+device as a wakeup source, so the /sys power/wakeup attributes
+and the wakealarm interface never appeared, and the alarm IRQ
+was masked along with all other non-wakeup IRQs during
+suspend, so an RTC alarm could never wake the system.
+
+Register the device wakeup capability from the standard
+"wakeup-source" device tree property and register the alarm
+IRQ as the device wake IRQ so the PM core arms it during
+suspend.
+---
+ drivers/rtc/rtc-stmp3xxx.c | 20 ++++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/drivers/rtc/rtc-stmp3xxx.c b/drivers/rtc/rtc-stmp3xxx.c
+index aae40d20d..9465f686a 100644
+--- a/drivers/rtc/rtc-stmp3xxx.c
++++ b/drivers/rtc/rtc-stmp3xxx.c
+@@ -19,6 +19,7 @@
+ #include <linux/rtc.h>
+ #include <linux/slab.h>
+ #include <linux/of_device.h>
++#include <linux/pm_wakeirq.h>
+ #include <linux/of.h>
+ #include <linux/stmp_device.h>
+ #include <linux/stmp3xxx_rtc_wdt.h>
+@@ -239,6 +240,8 @@ static int stmp3xxx_rtc_remove(struct platform_device *pdev)
+ 	if (!rtc_data)
+ 		return 0;
+ 
++	dev_pm_clear_wake_irq(&pdev->dev);
++
+ 	writel(STMP3XXX_RTC_CTRL_ALARM_IRQ_EN,
+ 		rtc_data->io + STMP3XXX_RTC_CTRL + STMP_OFFSET_REG_CLR);
+ 
+@@ -368,6 +371,23 @@ static int stmp3xxx_rtc_probe(struct platform_device *pdev)
+ 	rtc_data->rtc->ops = &stmp3xxx_rtc_ops;
+ 	rtc_data->rtc->range_max = U32_MAX;
+ 
++	/*
++	 * The RTC alarm can wake the SoC from suspend (the driver arms
++	 * ALARM_WAKE_EN in PERSISTENT0), but only if the device is
++	 * registered as a wakeup source.  Honour the standard
++	 * "wakeup-source" device tree property for this; the RTC core
++	 * does not do it for us.
++	 */
++	device_init_wakeup(&pdev->dev,
++			   of_property_read_bool(pdev->dev.of_node,
++						 "wakeup-source"));
++	if (device_may_wakeup(&pdev->dev)) {
++		err = dev_pm_set_wake_irq(&pdev->dev, rtc_data->irq_alarm);
++		if (err)
++			dev_warn(&pdev->dev,
++				 "failed to register wake irq: %d\n", err);
++	}
++
+ 	err = devm_rtc_register_device(rtc_data->rtc);
+ 	if (err)
+ 		return err;
+-- 
+2.43.0
+

@@ -1,30 +1,19 @@
-# brainux-driver
+# brain-tools
 
-Drivers and device-tree fixes that make the SHARP Brain (PW-SH6) hardware
-work under [Brainux](https://github.com/brain-hackers/buildbrain)
-(Debian 13, Linux 6.1.70, DT `imx28-pwsh6`):
+Tools for the SHARP Brain (PW-SH6) electronic dictionary, covering both
+of the machine's software worlds:
 
-| Item | State in stock Brainux | This repo |
-| --- | --- | --- |
-| i.MX28 RTC | DT node `status="disabled"`, no `/dev/rtc0` | DT enabled + wakeup-source; driver wake-IRQ fix |
-| Audio (ROHM BU26154MUV codec) | DT names an EVK sgtl5000 that is not on the board; no driver exists | New ASoC codec driver + MXS machine driver + DT glue |
-| Suspend wake from RTC alarm | RTC not registered as a wakeup source; alarm IRQ is masked during suspend | `wakeup-source` DT property honoured by `rtc-stmp3xxx` |
-
-## Legal basis / information sources
-
-Everything here was written **only** from:
-
-- the public ROHM BU26154MUV datasheet (Rev.002),
-- mainline Linux source code,
-- the Brainux distribution and its kernel source
-  ([brain-hackers/linux-brain](https://github.com/brain-hackers/linux-brain), GPL),
-- black-box observation of a running Brainux system (boot logs, dmesg,
-  commands run inside the guest, audio captured from the emulator).
-
-No WinCE/eMMC image contents were extracted, disassembled or otherwise
-analysed for this work.
+- **Brainux (Linux)** — kernel drivers and device-tree fixes that make
+  the hardware work under
+  [Brainux](https://github.com/brain-hackers/buildbrain)
+  (Debian 13, Linux 6.1.70, DT `imx28-pwsh6`).
+- **WinCE (stock shell)** — a generator for `AppMain.blr`, the companion
+  file the stock WinCE shell requires before it launches an additional
+  app from an SD card.
 
 ## Contents
+
+### Brainux driver tools
 
 - `patches/` — the three changes as patches against
   brain-hackers/linux-brain @ Linux 6.1.70:
@@ -49,11 +38,39 @@ analysed for this work.
   `zImage` + DTB.
 - `scripts/install-sd.sh` — install a DTB (RTC-only fix) or a full
   kernel+DTB onto a Brainux SD image (FAT boot partition, via mtools).
+
+### WinCE app tools
+
 - `scripts/blr_build.py` — generate `AppMain.blr`, the companion file
   the WinCE shell requires before launching an additional app from an
   SD card (see the last section).
 
-## Why a full kernel rebuild for audio?
+## Brainux drivers
+
+Drivers and device-tree fixes that make the SHARP Brain (PW-SH6) hardware
+work under Brainux:
+
+| Item | State in stock Brainux | This repo |
+| --- | --- | --- |
+| i.MX28 RTC | DT node `status="disabled"`, no `/dev/rtc0` | DT enabled + wakeup-source; driver wake-IRQ fix |
+| Audio (ROHM BU26154MUV codec) | DT names an EVK sgtl5000 that is not on the board; no driver exists | New ASoC codec driver + MXS machine driver + DT glue |
+| Suspend wake from RTC alarm | RTC not registered as a wakeup source; alarm IRQ is masked during suspend | `wakeup-source` DT property honoured by `rtc-stmp3xxx` |
+
+### Legal basis / information sources
+
+Everything here was written **only** from:
+
+- the public ROHM BU26154MUV datasheet (Rev.002),
+- mainline Linux source code,
+- the Brainux distribution and its kernel source
+  ([brain-hackers/linux-brain](https://github.com/brain-hackers/linux-brain), GPL),
+- black-box observation of a running Brainux system (boot logs, dmesg,
+  commands run inside the guest, audio captured from the emulator).
+
+No WinCE/eMMC image contents were extracted, disassembled or otherwise
+analysed for this work.
+
+### Why a full kernel rebuild for audio?
 
 The Brainux rootfs ships **no `/lib/modules` directory** and no
 `Module.symvers` for the stock kernel, so out-of-tree modules cannot be
@@ -62,7 +79,7 @@ practical route — and the one verified here — is to rebuild the whole
 kernel from the distribution's own source with the new drivers built-in
 (`CONFIG_SND_SOC_BU26154=y`, `CONFIG_SND_SOC_MXS_BU26154=y`).
 
-## Toolchain
+### Toolchain
 
 Any ARMv5-compatible cross toolchain works. Verified with:
 
@@ -76,12 +93,12 @@ Any ARMv5-compatible cross toolchain works. Verified with:
 Set `CROSS_COMPILE` accordingly; `scripts/build-kernel.sh` defaults to
 `arm-linux-gnueabi-`.
 
-## Build
+### Build
 
 ```sh
 git clone https://github.com/brain-hackers/linux-brain
 cd linux-brain
-for p in /path/to/brainux-driver/patches/*.patch; do git am "$p"; done
+for p in /path/to/brain-tools/patches/*.patch; do git am "$p"; done
 # or: ./scripts/build-kernel.sh /path/to/linux-brain
 ```
 
@@ -89,7 +106,7 @@ for p in /path/to/brainux-driver/patches/*.patch; do git am "$p"; done
 `arch/arm/boot/zImage` and `arch/arm/boot/dts/imx28-pwsh6.dtb` into an
 out-of-tree build directory (`O=../kbuild` by default).
 
-## Install onto an SD image
+### Install onto an SD image
 
 Work on a **copy** of the Brainux SD image. The boot partition is the
 first (FAT) partition at byte offset 1048576; the files are `zImage` and
@@ -103,7 +120,7 @@ scripts/install-sd.sh sd-work.img rtc
 scripts/install-sd.sh sd-work.img full /path/to/zImage /path/to/imx28-pwsh6.dtb
 ```
 
-## Verify
+### Verify
 
 Boot the image and log in (`user` / `brain`).
 
@@ -130,7 +147,7 @@ Suspend wake (rebuilt kernel): set an RTC alarm ~1 minute ahead
 `RTC_AIE_ON` ioctls), then `echo mem > /sys/power/state`; the system
 resumes by itself when the alarm fires.
 
-## Verification status (2026-11-18, on the SHARP Brain QEMU)
+### Verification status (2026-11-18, on the SHARP Brain QEMU)
 
 - **RTC (stock kernel + `prebuilt/imx28-pwsh6-rtc-only.dtb`)**: `stmp3xxx-rtc
   80056000.rtc: registered as rtc0`; `/dev/rtc0` present; `RTC_SET_TIME` to
@@ -150,7 +167,7 @@ resumes by itself when the alarm fires.
   `wakealarm` interface exists; an alarm can be armed and the system
   enters `mem` suspend cleanly.
 
-## Known issues
+### Known issues
 
 - The distribution's `user` account is not in the `audio` group, while
   `/dev/snd/*` is `root:audio 0660` — run ALSA tools as root (or add the
@@ -166,7 +183,7 @@ resumes by itself when the alarm fires.
   seconds counter, so the alarm interrupt is never raised. The guest-side
   wiring (this repo) is the standard mainline path and is complete.
 
-## Hardware notes (from the public datasheet)
+### Hardware notes (from the public datasheet)
 
 The BU26154 is at I2C address `0x1a` on i2c0. Its register interface is
 unusual: the first byte of every transaction is an INDEX; an even INDEX

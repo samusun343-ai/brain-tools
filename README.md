@@ -49,6 +49,9 @@ analysed for this work.
   `zImage` + DTB.
 - `scripts/install-sd.sh` — install a DTB (RTC-only fix) or a full
   kernel+DTB onto a Brainux SD image (FAT boot partition, via mtools).
+- `scripts/blr_build.py` — generate `AppMain.blr`, the companion file
+  the WinCE shell requires before launching an additional app from an
+  SD card (see the last section).
 
 ## Why a full kernel rebuild for audio?
 
@@ -172,3 +175,24 @@ the data pointer auto-increments by 2. The driver therefore implements
 the codec read/write callbacks directly instead of using regmap. The
 part is clocked from the SAIF (it is the I2S slave; the SoC is master),
 with `CLKSEL` choosing the MCLKI divider so that MCLKI = 256/512/1024 × fs.
+
+## Tool: AppMain.blr generator (WinCE additional apps)
+
+`AppMain.blr` is a fixed 1024-byte companion file that sits next to
+`AppMain.exe` in a SHARP Brain additional-app folder. Before launching
+an app installed on an SD card, the WinCE shell (`wceprj`) verifies
+this file against the exe. The check uses only byte sums and XORs
+derived from the exe itself — its size, the sum of its first 4 KiB,
+the sum around its entry point, and the sum of its `.pdata` section —
+scattered into the `.blr` at fixed offsets. There is no cryptographic
+signature, so a valid `.blr` can be generated for any exe:
+
+```sh
+python3 scripts/blr_build.py AppMain.exe AppMain.blr
+```
+
+(The script prints the derived values and self-verifies its output.)
+For the SD-card route the complete additional-app set is four files in
+one folder: `AppMain.exe`, `AppMain.cfg`, `index.din` and
+`AppMain.blr`. Apps installed under `\Nand` skip this check entirely,
+so the `.blr` is only needed for the card route.

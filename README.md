@@ -13,9 +13,20 @@ of the machine's software worlds:
 
 ## Contents
 
+```text
+brainux/   Brainux (Linux) kernel drivers and tools
+  patches/   kernel patches against brain-hackers/linux-brain
+  sound/     the new ASoC driver sources (copies of patch 0002's files)
+  scripts/   kernel build / SD install scripts
+wince/     WinCE (stock shell) tools
+  blr_build.py   AppMain.blr generator
+prebuilt/  prebuilt DTBs (local working copies only; not mirrored
+           to GitHub — see below)
+```
+
 ### Brainux driver tools
 
-- `patches/` — the three changes as patches against
+- `brainux/patches/` — the three changes as patches against
   brain-hackers/linux-brain @ Linux 6.1.70:
   1. `0001` — DTS: enable the RTC (`status="okay"`, `wakeup-source`).
   2. `0002` — ASoC: BU26154 codec driver (`sound/soc/codecs/bu26154.c`),
@@ -24,24 +35,25 @@ of the machine's software worlds:
   3. `0003` — `rtc-stmp3xxx`: honour `wakeup-source`
      (`device_init_wakeup()` + `dev_pm_set_wake_irq()`), so the RTC alarm
      can wake the system from suspend.
-- `sound/` — the two new driver sources, for direct copying into a kernel
-  tree (identical to the copies in patch 0002).
+- `brainux/sound/` — the two new driver sources, for direct copying into
+  a kernel tree (identical to the copies in patch 0002).
 - `prebuilt/imx28-pwsh6-rtc-only.dtb` — the stock DTB with *only* the RTC
   node enabled; works with the stock kernel (the stock kernel already has
   `CONFIG_RTC_DRV_STMP=y`). Enough for M1 (RTC) without rebuilding a kernel.
 - `prebuilt/imx28-pwsh6.dtb` — DTB for the rebuilt kernel (RTC + BU26154).
   (The prebuilt DTBs are binary and are not mirrored in the GitHub copy of
-  this repo; regenerate them with `scripts/build-kernel.sh`, which builds
-  the full DTB, or apply the `wakeup-source` edit from patch 0001 to the
-  stock DTB with `dtc` for the RTC-only variant.)
-- `scripts/build-kernel.sh` — clone linux-brain, apply the patches, build
-  `zImage` + DTB.
-- `scripts/install-sd.sh` — install a DTB (RTC-only fix) or a full
-  kernel+DTB onto a Brainux SD image (FAT boot partition, via mtools).
+  this repo; regenerate them with `brainux/scripts/build-kernel.sh`,
+  which builds the full DTB, or apply the `wakeup-source` edit from
+  patch 0001 to the stock DTB with `dtc` for the RTC-only variant.)
+- `brainux/scripts/build-kernel.sh` — clone linux-brain, apply the
+  patches, build `zImage` + DTB.
+- `brainux/scripts/install-sd.sh` — install a DTB (RTC-only fix) or a
+  full kernel+DTB onto a Brainux SD image (FAT boot partition,
+  via mtools).
 
 ### WinCE app tools
 
-- `scripts/blr_build.py` — generate `AppMain.blr`, the companion file
+- `wince/blr_build.py` — generate `AppMain.blr`, the companion file
   the WinCE shell requires before launching an additional app from an
   SD card (see the last section).
 
@@ -90,19 +102,19 @@ Any ARMv5-compatible cross toolchain works. Verified with:
   prefix `arm-buildroot-linux-gnueabi-`) plus a `bc` on `PATH`
   (the kernel build needs `bc` for `timeconst.h`).
 
-Set `CROSS_COMPILE` accordingly; `scripts/build-kernel.sh` defaults to
-`arm-linux-gnueabi-`.
+Set `CROSS_COMPILE` accordingly; `brainux/scripts/build-kernel.sh`
+defaults to `arm-linux-gnueabi-`.
 
 ### Build
 
 ```sh
 git clone https://github.com/brain-hackers/linux-brain
 cd linux-brain
-for p in /path/to/brain-tools/patches/*.patch; do git am "$p"; done
-# or: ./scripts/build-kernel.sh /path/to/linux-brain
+for p in /path/to/brain-tools/brainux/patches/*.patch; do git am "$p"; done
+# or: ./brainux/scripts/build-kernel.sh /path/to/linux-brain
 ```
 
-`scripts/build-kernel.sh` runs `brain_defconfig` and builds
+`brainux/scripts/build-kernel.sh` runs `brain_defconfig` and builds
 `arch/arm/boot/zImage` and `arch/arm/boot/dts/imx28-pwsh6.dtb` into an
 out-of-tree build directory (`O=../kbuild` by default).
 
@@ -115,9 +127,9 @@ first (FAT) partition at byte offset 1048576; the files are `zImage` and
 ```sh
 cp sd.img sd-work.img
 # RTC only (stock kernel):
-scripts/install-sd.sh sd-work.img rtc
+brainux/scripts/install-sd.sh sd-work.img rtc
 # Full (rebuilt kernel + DTB):
-scripts/install-sd.sh sd-work.img full /path/to/zImage /path/to/imx28-pwsh6.dtb
+brainux/scripts/install-sd.sh sd-work.img full /path/to/zImage /path/to/imx28-pwsh6.dtb
 ```
 
 ### Verify
@@ -205,7 +217,7 @@ scattered into the `.blr` at fixed offsets. There is no cryptographic
 signature, so a valid `.blr` can be generated for any exe:
 
 ```sh
-python3 scripts/blr_build.py AppMain.exe AppMain.blr
+python3 wince/blr_build.py AppMain.exe AppMain.blr
 ```
 
 (The script prints the derived values and self-verifies its output.)

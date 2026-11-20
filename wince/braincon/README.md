@@ -30,6 +30,8 @@ use themselves.
 sh build.sh
 ```
 
+Prebuilt binaries are included under `prebuilt/` for direct use; `build.sh` regenerates them from source.
+
 This compiles both sources
 (`clang -target armv5te-none-eabi -marm -Os -ffreestanding
 -fno-builtin -fshort-wchar`) and links them with `pe-link47.py`:

@@ -1,8 +1,10 @@
 /* p47term.c -- BrainCon terminal + launcher (SHARP Brain, WinCE).
  *
  * One app, three jobs:
- *   1. Register and activate the BrainCon console stream driver
- *      (BrainCon.dll, device CON1:) -- see README.md for the keys.
+ *   1. Install (an embedded copy of BrainCon.dll is written to
+ *      \Nand2 if none is there), register and activate the BrainCon
+ *      console stream driver (device CON1:) -- see README.md. The
+ *      additional-app set on the card is all a user needs.
  *   2. Host the on-screen terminal window: drains the driver's
  *      output ring (IOCTL_CON_GETOUTPUT) into a scrollback grid and
  *      feeds keystrokes back (IOCTL_CON_PUTINPUT).
@@ -99,6 +101,8 @@ extern void *GetProcAddressW(HANDLE, const WCHAR *);
 extern BOOL FreeLibrary(HANDLE);
 extern BOOL SetStdioPathW(DWORD, const WCHAR *);
 extern BOOL GetStdioPathW(DWORD, WCHAR *, DWORD *);
+extern DWORD GetFileSize(HANDLE, DWORD *);
+extern DWORD GetModuleFileNameW(HANDLE, WCHAR *, DWORD);
 extern int RegisterClassW(const WNDCLASS *);
 extern HANDLE CreateWindowExW(DWORD, const WCHAR *, const WCHAR *, DWORD, int, int, int, int, HANDLE, HANDLE, HANDLE, void *);
 extern BOOL ShowWindow(HANDLE, int);
@@ -292,6 +296,83 @@ static void setup_font(void) {
   write_out();
 }
 
+/* ---------------- driver DLL self-install ----------------
+ * The terminal carries an embedded copy of BrainCon.dll and
+ * installs it before registering the driver, so the additional-app
+ * set on the card is all a user needs: nothing has to be copied to
+ * \Nand2 by hand. (Originally the DLL had to be placed on \Nand2
+ * out of band; with only the card set present, registration pointed
+ * at a nonexistent file and activation always failed with
+ * "DRIVER ACTIVATION FAILED".) */
+#include "braincon_embed.h"
+
+static WCHAR g_dllpath[280];
+
+static void wstr_copy(WCHAR *dst, const WCHAR *src) {
+  while ((*dst++ = *src++)) {}
+}
+static int wstr_len(const WCHAR *s) { int n = 0; while (s[n]) n++; return n; }
+
+static long file_size_of(const WCHAR *path) {
+  HANDLE h = CreateFileW(path, GENERIC_READ, 1, NULL, OPEN_EXISTING, 0, NULL);
+  if (h == (HANDLE)-1) return -1;
+  DWORD sz = GetFileSize(h, NULL);
+  CloseHandle(h);
+  return (long)sz;
+}
+
+static int write_embedded_dll(const WCHAR *path) {
+  HANDLE h = CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                         FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == (HANDLE)-1) {
+    log_s("dll install: open failed le="); log_dec(GetLastError()); log_nl();
+    write_out();
+    return 0;
+  }
+  DWORD off = 0; int ok = 1;
+  while (off < (DWORD)sizeof(g_braincon_dll)) {
+    DWORD chunk = (DWORD)sizeof(g_braincon_dll) - off;
+    if (chunk > 8192) chunk = 8192;
+    DWORD w = 0;
+    if (!WriteFile(h, g_braincon_dll + off, chunk, &w, NULL) || w == 0) { ok = 0; break; }
+    off += w;
+  }
+  CloseHandle(h);
+  log_s("dll install: wrote "); log_dec(off);
+  log_s(ok ? " bytes to " : " bytes (FAILED) to ");
+  log_ws(path); log_nl(); write_out();
+  return ok && off == (DWORD)sizeof(g_braincon_dll);
+}
+
+static void ensure_driver_dll(void) {
+  wstr_copy(g_dllpath, L"\\Nand2\\BrainCon.dll");
+  if (file_size_of(g_dllpath) == (long)sizeof(g_braincon_dll)) {
+    log_s("dll install: already present at "); log_ws(g_dllpath);
+    log_nl(); write_out();
+    return;
+  }
+  if (write_embedded_dll(g_dllpath)) return;
+  /* fallback: beside the exe (its card folder) */
+  {
+    WCHAR mod[280];
+    DWORD n = GetModuleFileNameW(NULL, mod, 280);
+    if (n && n < 260) {
+      int i = (int)n - 1;
+      while (i >= 0 && mod[i] != L'\\') i--;
+      mod[i + 1] = 0;
+      wstr_copy(g_dllpath, mod);
+      { int j = wstr_len(g_dllpath); const WCHAR *p = L"BrainCon.dll";
+        while (*p) g_dllpath[j++] = *p++;
+        g_dllpath[j] = 0; }
+      if (file_size_of(g_dllpath) == (long)sizeof(g_braincon_dll) ||
+          write_embedded_dll(g_dllpath)) return;
+    }
+  }
+  /* last resort: keep the default path; activation reports the error */
+  wstr_copy(g_dllpath, L"\\Nand2\\BrainCon.dll");
+  log_s("dll install: FAILED everywhere"); log_nl(); write_out();
+}
+
 /* ---------------- driver registration ---------------- */
 static HANDLE g_hDev;      /* ActivateDeviceEx token */
 static HANDLE g_hTerm;     /* our CON1: handle for IOCTLs */
@@ -307,11 +388,12 @@ static void reg_set_dw(HANDLE hk, const WCHAR *name, DWORD val) {
 
 static int activate_driver(void) {
   HANDLE hk = NULL; DWORD disp = 0;
+  ensure_driver_dll();
   long rc = RegCreateKeyExW(HKEY_LOCAL_MACHINE, L"Drivers\\BuiltIn\\BrainCon",
                             0, NULL, 0, 0, NULL, &hk, &disp);
   log_s("RegCreateKeyEx BrainCon rc="); log_dec((DWORD)rc); log_nl();
   if (rc == 0 && hk) {
-    reg_set_sz(hk, L"Dll", L"\\Nand2\\BrainCon.dll");
+    reg_set_sz(hk, L"Dll", g_dllpath);
     reg_set_sz(hk, L"Prefix", L"CON");
     reg_set_dw(hk, L"Index", 1);
     reg_set_dw(hk, L"Order", 0);
@@ -324,7 +406,7 @@ static int activate_driver(void) {
   log_s("ActivateDeviceEx -> "); log_hex((DWORD)g_hDev);
   log_s(" le="); log_dec(GetLastError()); log_nl(); write_out();
   if (!g_hDev) {
-    BOOL ok = RegisterDevice(L"CON", 1, L"\\Nand2\\BrainCon.dll", 0);
+    BOOL ok = RegisterDevice(L"CON", 1, g_dllpath, 0);
     log_s("RegisterDevice fallback -> "); log_dec((DWORD)ok);
     log_s(" le="); log_dec(GetLastError()); log_nl();
     if (!ok) return 0;
@@ -576,10 +658,16 @@ static void pump(void) {
     if ((++tick & 3) == 0) { g_blink = !g_blink; InvalidateRect(g_hwnd, NULL, FALSE); }
   }
   if (!g_rectAsserted && g_shellTick) {  /* the shell frame may have
-    repositioned us at activation: assert the fitting rect once more */
+    repositioned us at activation: assert the fitting rect once more
+    (only if we were actually moved -- an unnecessary MoveWindow
+    would leave an unrepainted ghost of the old position, p65) */
     g_rectAsserted = 1;
-    MoveWindow(g_hwnd, 96, 12, 688, 452, TRUE);
-    log_window_rects(g_hwnd, "after-assert");
+    RECT wr;
+    if (GetWindowRect(g_hwnd, &wr) &&
+        (wr.left != 96 || wr.top != 12 || wr.right != 784 || wr.bottom != 464)) {
+      MoveWindow(g_hwnd, 96, 12, 688, 452, TRUE);
+      log_window_rects(g_hwnd, "after-assert");
+    }
   }
 }
 
@@ -593,8 +681,9 @@ typedef BOOL (*PFN_CLOSE)(DWORD);
 typedef DWORD (*PFN_RW)(DWORD, void *, DWORD);
 typedef BOOL (*PFN_IOCTL)(DWORD, DWORD, BYTE *, DWORD, BYTE *, DWORD, DWORD *);
 static void dlltest(void) {
+  ensure_driver_dll();
   log_s("dlltest: LoadLibrary BrainCon.dll"); log_nl(); write_out();
-  HANDLE h = LoadLibraryW(L"\\Nand2\\BrainCon.dll");
+  HANDLE h = LoadLibraryW(g_dllpath);
   log_s("LoadLibrary -> "); log_hex((DWORD)h); log_s(" le="); log_dec(GetLastError()); log_nl(); write_out();
   if (!h) return;
   PFN_INIT pInit = (PFN_INIT)GetProcAddressW(h, L"CON_Init");
@@ -876,17 +965,20 @@ int __attribute__((stdcall)) WinMain(HANDLE hInst, HANDLE hPrev, WCHAR *cmd, int
   wc.hInstance = hInst;
   wc.lpszClassName = L"P47TermClass";
   RegisterClassW(&wc);
+  /* Create the window directly at its final rect. (It used to be
+   * created at (80,24) and then MoveWindow'd into place; on this
+   * shell the area a window vacates is never repainted, so that one
+   * move left a permanent ghost slice of the window on screen --
+   * see the p65 report. Creating at the final position leaves no
+   * vacated area.) */
   g_hwnd = CreateWindowExW(0, L"P47TermClass", L"BrainCon Terminal",
                            WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-                           80, 24, 694, 432, NULL, NULL, hInst, NULL);
+                           96, 12, 688, 452, NULL, NULL, hInst, NULL);
   ShowWindow(g_hwnd, SW_SHOWNORMAL);
   UpdateWindow(g_hwnd);
   SetForegroundWindow(g_hwnd);
   SetFocus(g_hwnd);
   log_window_rects(g_hwnd, "after-create");
-  /* keep the whole window inside the shell frame's visible area */
-  MoveWindow(g_hwnd, 96, 12, 688, 452, TRUE);
-  log_window_rects(g_hwnd, "after-move");
   g_t0 = GetTickCount();
   log_s("step: window up, hwnd="); log_hex((DWORD)g_hwnd); log_nl(); write_out();
 

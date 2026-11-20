@@ -98,3 +98,15 @@ same folder, so an exe-only update will not launch.
   means the Backslash key itself.
 - Host-key remaps measured on this guest: Home→F1, End→PgUp,
   PgUp→PgDn (scrollback), Delete→Esc (forward delete).
+- **Moving the window leaves a ghost** — a property of the SHARP
+  shell, not of this app: the shell frame never repaints screen
+  areas that a moved window vacates, so dragging any overlapped
+  window (this one included) leaves a copy of its old position
+  behind, and repeated moves pile up copies (verified in-guest,
+  p65; invalidating the vacated area is accepted but ignored by
+  the shell frame). The ghost is outside the app's window, in
+  shell-owned territory the app cannot paint; the shell paints
+  its own screens in full when navigating to them, so it does not
+  survive leaving and returning to that screen. BrainTerm opens
+  directly at its final position, so it adds no ghost of its own
+  at startup.

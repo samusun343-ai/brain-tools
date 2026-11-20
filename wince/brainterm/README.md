@@ -18,6 +18,7 @@ and the command interpreter inside one GUI app.
 | `build48.py` | build driver: clang compile + unresolved-symbol check against the linker ordinal table, then link |
 | `THEMES.md` | the four colour themes with their sourced values |
 | `prebuilt/BrainTerm.exe` | prebuilt binary (271,872 B, 58 COREDLL ordinal imports) |
+| `prebuilt/launch/` | **complete additional-app set, ready to launch** — see Install |
 
 ## Build
 
@@ -32,16 +33,32 @@ python3 build48.py   # writes BrainTerm.exe next to the sources
 ## Install (additional-app route)
 
 BrainTerm is launched through the shell's additional-app list.
-Place a folder `\アプリ\BrainTerm\` on a bare FAT16 SD card with:
+**`prebuilt/launch/` contains the complete set, ready to use:**
+copy its four files, unchanged, into a folder `\アプリ\BrainTerm\`
+on a bare FAT16 SD card:
 
 | file | origin |
 |---|---|
 | `AppMain.exe` | copy of `BrainTerm.exe` |
 | `AppMain.blr` | gate record for this exe, generated with `../blr_build.py` |
-| `AppMain.cfg`, `index.din` | from a genuine SHARP additional-app set (not included here) |
+| `AppMain.cfg`, `index.din` | from a genuine SHARP additional-app set (PW-SH1) |
 
 The entry then appears in the shell's 追加アプリ list and starts
 with a normal window (no ATR sidebar).
+
+Provenance and verification of the archived set: the four files are
+the exact bytes of the set that was launched and exercised on the
+guest during development (extracted back out of the FAT16 SD image
+used for those runs; `AppMain.exe` md5 `574fe9e5…` = the prebuilt
+above, `AppMain.cfg` md5 `3e6d243e…`, `index.din` md5 `7e852cfd…`,
+`AppMain.blr` md5 `c16ce795…`). The archived `AppMain.blr` was
+re-checked against this repository's generator —
+`python3 ../blr_build.py AppMain.exe` reproduces it **byte for
+byte**, and the generator's offline gate re-implementation
+(`verify()`) passes. If `BrainTerm.exe` is ever rebuilt, the blr
+must be regenerated for the new exe bytes and the whole set
+replaced together: the gate checks the blr against the exe in the
+same folder, so an exe-only update will not launch.
 
 ## Features
 

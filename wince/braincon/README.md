@@ -19,6 +19,8 @@ plain stream interface documented below.
 | `pe-link47.py` | minimal PE linker (ELF32-ARM object → WinCE PE, coredll ordinal imports) |
 | `build.sh` | builds `BrainCon.dll` and `P47Term.exe` |
 | `THEMES.md` | terminal colour themes with their sourced values |
+| `prebuilt/BrainCon.dll`, `prebuilt/P47Term.exe` | prebuilt binaries |
+| `prebuilt/launch/` | **complete additional-app set for the terminal, ready to launch** — see Deployment |
 
 ## Build
 
@@ -55,21 +57,43 @@ runtime:
 1. Copy `BrainCon.dll` to `\Nand2\BrainCon.dll` on the device (the
    terminal registers the driver from that path).
 2. Put the terminal on an SD card as an **additional app** (the
-   stock shell's normal route for card apps):
+   stock shell's normal route for card apps). **`prebuilt/launch/`
+   in this repository contains the complete set, ready to use:**
+   copy its four files, unchanged, into `\アプリ\P47TERM\` on the
+   card:
 
    ```text
-   \アプリ\<any name>\{ AppMain.exe = P47Term.exe,
-                        AppMain.cfg, index.din, AppMain.blr }
+   \アプリ\P47TERM\{ AppMain.exe = P47Term.exe,
+                      AppMain.cfg, index.din, AppMain.blr }
    ```
 
-   `AppMain.cfg` and `index.din` are taken from any official
-   additional-app package (the din only supplies the list title);
-   `AppMain.blr` must be generated for this exe with the generator
-   in this repository:
+   `AppMain.cfg` and `index.din` are taken from an official
+   additional-app package (PW-SH1; the din only supplies the list
+   title); `AppMain.blr` is generated for this exe with the
+   generator in this repository:
 
    ```sh
    python3 ../blr_build.py AppMain.exe AppMain.blr
    ```
+
+   Provenance and verification of the archived set: the four files
+   are the exact bytes of the set that was launched and exercised
+   on the guest during development (extracted back out of the
+   FAT16 SD image used for those runs; `AppMain.exe` md5
+   `90d6252b…` = `prebuilt/P47Term.exe`, `AppMain.cfg` md5
+   `3e6d243e…`, `index.din` md5 `7e852cfd…`, `AppMain.blr` md5
+   `17e2906d…`). The archived `AppMain.blr` was re-checked against
+   the generator: `python3 ../blr_build.py AppMain.exe` reproduces
+   it **byte for byte**, and the generator's offline gate
+   re-implementation (`verify()`) passes. If `P47Term.exe` is ever
+   rebuilt, regenerate the blr and replace the whole set together.
+
+   `BrainCon.dll` itself needs **no** blr and is not part of the
+   launch folder: the shell's gate validates only the
+   `AppMain.blr` sitting next to an additional app's
+   `AppMain.exe`, while the DLL is loaded by `device.exe` from
+   `\Nand2` through the registry entry the terminal writes (step 1
+   above and "The device" below), a path the gate never inspects.
 
 3. Optionally write `\Nand2\P47MODE.TXT` (UTF-16LE, first line
    `termkbd` for plain interactive use; see Modes below) and

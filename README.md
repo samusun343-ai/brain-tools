@@ -24,6 +24,10 @@ wince/     WinCE (stock shell) tools
   blr_build.py   AppMain.blr generator
   braincon/      BrainCon console stream driver (CON1:) + terminal
                  window that makes TxtShell interactive
+  brainterm/     BrainTerm, a self-contained terminal + command
+                 interpreter window app
+  mascot/        desktop mascot player (.bdm v3 packs, software
+                 alpha blending; character packs not included)
 prebuilt/  prebuilt DTBs (local working copies only; not mirrored
            to GitHub — see below)
 ```

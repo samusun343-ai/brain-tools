@@ -299,10 +299,12 @@ def main():
         for s_ in sites: pages.setdefault(s_ & ~0xFFF, []).append(s_ & 0xFFF)
         for page, offs in sorted(pages.items()):
             entries = sorted(offs)
-            if len(entries) % 2: entries.append(0)  # pad entry (type 0)
-            reloc += struct.pack('<II', page, 8 + 2 * len(entries))
+            pad = len(entries) % 2  # pad entry must be type 0 (ABSOLUTE)
+            reloc += struct.pack('<II', page, 8 + 2 * (len(entries) + pad))
             for o_ in entries:
                 reloc += struct.pack('<H', (3 << 12) | o_)  # HIGHLOW
+            if pad:
+                reloc += struct.pack('<H', 0)  # ABSOLUTE: no-op padding
         rva += align(len(reloc), SECT_ALIGN)
         size_of_image = rva
 
